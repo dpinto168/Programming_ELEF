@@ -1,208 +1,153 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Muñeco Sensorial</title>
-  <style>
-    :root { color-scheme: dark; }
-    * { box-sizing: border-box; }
-    html, body {
-      margin: 0; padding: 0; height: 100%;
-      background: #000; overflow: hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-    .center {
-      position: fixed; inset: 0; display: flex;
-      align-items: center; justify-content: center; flex-direction: column;
-      gap: 12px; background: #000;
-    }
-    .btn {
-      appearance: none; border: 0; border-radius: 12px;
-      padding: 14px 18px; font-size: 16px; font-weight: 600;
-      background: #ffd400; color: #111; cursor: pointer;
-    }
-    .hint { color: #aaa; font-size: 14px; text-align: center; max-width: 90vw; }
-    video {
-      position: fixed; inset: 0;
-      width: 100vw; height: 100vh;
-      object-fit: contain;
-      display: none; /* se muestra al reproducir */
-      background: #000;
-    }
-    /* Fallback controls para desktop (sin sensores) */
-    .fallback {
-      position: fixed; left: 12px; bottom: 12px; display: flex; gap: 8px; opacity: .8;
-    }
-    .fallback button { padding: 8px 10px; border-radius: 8px; border: 0; }
-  </style>
-</head>
-<body>
-
-  <!-- Pantalla inicial -->
-  <div id="overlay" class="center">
-    <button id="start" class="btn">Tocar para iniciar</button>
-    <div class="hint">
-      Inclinate a la <strong>derecha</strong> o <strong>izquierda</strong> para ver animaciones.
-      Sacudí el teléfono para el efecto especial. En iOS, este toque otorga permiso a los sensores.
-    </div>
-  </div>
-
-  <!-- Videos -->
-  <video id="videoDerecha" src="derecha.mp4" muted playsinline preload="auto" poster="" ></video>
-  <video id="videoIzquierda" src="izquierda.mp4" muted playsinline preload="auto" poster="" ></video>
-  <video id="videoVomita" src="vomita.mp4" muted playsinline preload="auto" poster="" ></video>
-
-  <!-- Controles de prueba (desktop) -->
-  <div class="fallback" aria-hidden="true">
-    <button id="btnIzq">⟵ Izquierda</button>
-    <button id="btnDer">Derecha ⟶</button>
-    <button id="btnVomi">💥 Sacudida</button>
-  </div>
-
-  <script>
-    // --- Referencias
-    const videoDerecha = document.getElementById("videoDerecha");
-    const videoIzquierda = document.getElementById("videoIzquierda");
-    const videoVomita = document.getElementById("videoVomita");
-    const overlay = document.getElementById("overlay");
-    const startBtn = document.getElementById("start");
-
-    // --- Parámetros
-    const UMBRAL_INCLINACION = 15; // grados gamma
-    const UMBRAL_AGITACION = 25;   // suma de cambios xyz
-    const COOLDOWN_AGITACION_MS = 3000;
-
-    let ultimaLectura = { x: 0, y: 0, z: 0 };
-    let tiempoUltimaAgitacion = 0;
-
-    // --- Utilidades video
-    function ocultarTodos() {
-      [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
-        try { v.pause(); } catch {}
-        v.currentTime = 0;
-        v.style.display = "none";
-      });
-    }
-    async function reproducir(v) {
-      ocultarTodos();
-      v.style.display = "block";
-
-      // algunos navegadores requieren que esté muted y playsinline
-      v.muted = true;
-      v.setAttribute('playsinline', '');
-      v.setAttribute('webkit-playsinline', '');
-
-      try {
-        await v.play();
-      } catch (err) {
-        console.warn("No se pudo reproducir el video:", err);
-        // Si falla, mostramos controles para permitir play manual
-        v.setAttribute('controls', 'controls');
-      }
-    }
-    [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
-      v.addEventListener('ended', () => {
-        v.style.display = "none";
-      });
-      v.addEventListener('error', (e) => {
-        console.error("Error de video", v.id, e);
-        alert(`No se pudo cargar ${v.getAttribute('src')}. Verificá el nombre y la ubicación del archivo.`);
-      });
-    });
-
-    // --- Sensores
-    function iniciarSensores() {
-      // DeviceOrientation (inclinación)
-      window.addEventListener('deviceorientation', (event) => {
-        const gamma = typeof event.gamma === 'number' ? event.gamma : 0;
-
-        if (Math.abs(gamma) < UMBRAL_INCLINACION) return;
-
-        if (gamma > UMBRAL_INCLINACION) {
-          reproducir(videoDerecha);
-        } else if (gamma < -UMBRAL_INCLINACION) {
-          reproducir(videoIzquierda);
-        }
-      }, { passive: true });
-
-      // DeviceMotion (sacudida)
-      window.addEventListener('devicemotion', (event) => {
-        const acc = event.accelerationIncludingGravity;
-        if (!acc) return; // algunos navegadores devuelven null
-
-        // valores pueden venir undefined; normalizamos a 0
-        const ax = typeof acc.x === 'number' ? acc.x : 0;
-        const ay = typeof acc.y === 'number' ? acc.y : 0;
-        const az = typeof acc.z === 'number' ? acc.z : 0;
-
-        const cambioX = Math.abs(ax - (ultimaLectura.x ?? 0));
-        const cambioY = Math.abs(ay - (ultimaLectura.y ?? 0));
-        const cambioZ = Math.abs(az - (ultimaLectura.z ?? 0));
-
-        const cambioTotal = cambioX + cambioY + cambioZ;
-
-        if (cambioTotal > UMBRAL_AGITACION) {
-          const ahora = Date.now();
-          if (ahora - tiempoUltimaAgitacion > COOLDOWN_AGITACION_MS) {
-            reproducir(videoVomita);
-            tiempoUltimaAgitacion = ahora;
-          }
-        }
-
-        ultimaLectura = { x: ax, y: ay, z: az };
-      }, { passive: true });
-    }
-
-    // --- Solicitar permisos (iOS 13+)
-    async function solicitarPermisosIOSyArrancar() {
-      // desbloquear audio/autoplay: interacción ya ocurrió al tocar el botón
-      try {
-        // pre-play en silencio para "desbloquear"
-        await Promise.all([videoDerecha.play(), videoIzquierda.play(), videoVomita.play()]);
-        [videoDerecha, videoIzquierda, videoVomita].forEach(v => { v.pause(); v.currentTime = 0; });
-      } catch { /* ignoramos, sólo abrimos el candado */ }
-
-      if (typeof DeviceMotionEvent !== 'undefined' &&
-          typeof DeviceMotionEvent.requestPermission === 'function') {
-        try {
-          const pm = await DeviceMotionEvent.requestPermission();
-          if (pm !== 'granted') {
-            alert("Permiso de movimiento denegado. No se podrá detectar la sacudida/inclinación.");
-          }
-        } catch (e) {
-          console.warn("Error al solicitar permiso de movimiento:", e);
-        }
-      }
-
-      if (typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const po = await DeviceOrientationEvent.requestPermission();
-          if (po !== 'granted') {
-            console.warn("Permiso de orientación denegado (se intentará igualmente).");
-          }
-        } catch (e) {
-          console.warn("Error al solicitar permiso de orientación:", e);
-        }
-      }
-
-      iniciarSensores();
-      overlay.style.display = "none";
-    }
-
-    // --- Inicio por botón
-    startBtn.addEventListener('click', solicitarPermisosIOSyArrancar, { once: true });
-
-    // --- Fallback botones (pruebas en desktop)
-    document.getElementById('btnIzq').addEventListener('click', () => reproducir(videoIzquierda));
-    document.getElementById('btnDer').addEventListener('click', () => reproducir(videoDerecha));
-    document.getElementById('btnVomi').addEventListener('click', () => reproducir(videoVomita));
-
-    // --- Consejos extra:
-    // 1) Serví los .mp4 con un servidor local (p. ej. VS Code Live Server o python -m http.server).
-    // 2) Abrir el archivo directamente (file://) puede bloquear reproducción o acceso a sensores.
-    // 3) Mirá la consola del navegador (F12) si algo no carga.
-  </script>
-</body>
-</html>
+diff --git a/index.html b/index.html
+index 338cf11e468ebdaa9f15b71a1238ae0e45ed8288..e38b5a1aefea62b87c2fe010deef78d969d9b1b0 100644
+--- a/index.html
++++ b/index.html
+@@ -51,82 +51,92 @@
+   <!-- Videos -->
+   <video id="videoDerecha" src="derecha.mp4" muted playsinline preload="auto" poster="" ></video>
+   <video id="videoIzquierda" src="izquierda.mp4" muted playsinline preload="auto" poster="" ></video>
+   <video id="videoVomita" src="vomita.mp4" muted playsinline preload="auto" poster="" ></video>
+ 
+   <!-- Controles de prueba (desktop) -->
+   <div class="fallback" aria-hidden="true">
+     <button id="btnIzq">⟵ Izquierda</button>
+     <button id="btnDer">Derecha ⟶</button>
+     <button id="btnVomi">💥 Sacudida</button>
+   </div>
+ 
+   <script>
+     // --- Referencias
+     const videoDerecha = document.getElementById("videoDerecha");
+     const videoIzquierda = document.getElementById("videoIzquierda");
+     const videoVomita = document.getElementById("videoVomita");
+     const overlay = document.getElementById("overlay");
+     const startBtn = document.getElementById("start");
+ 
+     // --- Parámetros
+     const UMBRAL_INCLINACION = 15; // grados gamma
+     const UMBRAL_AGITACION = 25;   // suma de cambios xyz
+     const COOLDOWN_AGITACION_MS = 3000;
+ 
+-    let ultimaLectura = { x: 0, y: 0, z: 0 };
+-    let tiempoUltimaAgitacion = 0;
++    let ultimaLectura = { x: 0, y: 0, z: 0 };
++    let tiempoUltimaAgitacion = 0;
++    let videoActual = null;
+ 
+     // --- Utilidades video
+     function ocultarTodos() {
+-      [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
+-        try { v.pause(); } catch {}
+-        v.currentTime = 0;
+-        v.style.display = "none";
+-      });
+-    }
+-    async function reproducir(v) {
+-      ocultarTodos();
+-      v.style.display = "block";
+-
+-      // algunos navegadores requieren que esté muted y playsinline
+-      v.muted = true;
+-      v.setAttribute('playsinline', '');
+-      v.setAttribute('webkit-playsinline', '');
+-
+-      try {
+-        await v.play();
+-      } catch (err) {
+-        console.warn("No se pudo reproducir el video:", err);
+-        // Si falla, mostramos controles para permitir play manual
+-        v.setAttribute('controls', 'controls');
+-      }
++      [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
++        try { v.pause(); } catch {}
++        v.currentTime = 0;
++        v.style.display = "none";
++      });
++      videoActual = null;
++    }
++    async function reproducir(v) {
++      if (videoActual === v && !v.paused) {
++        return; // ya se está reproduciendo ese video
++      }
++
++      ocultarTodos();
++      v.style.display = "block";
++
++      // algunos navegadores requieren que esté muted y playsinline
++      v.muted = true;
++      v.setAttribute('playsinline', '');
++      v.setAttribute('webkit-playsinline', '');
++
++      try {
++        await v.play();
++        videoActual = v;
++      } catch (err) {
++        console.warn("No se pudo reproducir el video:", err);
++        // Si falla, mostramos controles para permitir play manual
++        v.setAttribute('controls', 'controls');
++      }
+     }
+     [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
+-      v.addEventListener('ended', () => {
+-        v.style.display = "none";
+-      });
++      v.addEventListener('ended', () => {
++        if (videoActual === v) {
++          videoActual = null;
++        }
++        v.style.display = "none";
++      });
+       v.addEventListener('error', (e) => {
+         console.error("Error de video", v.id, e);
+         alert(`No se pudo cargar ${v.getAttribute('src')}. Verificá el nombre y la ubicación del archivo.`);
+       });
+     });
+ 
+     // --- Sensores
+     function iniciarSensores() {
+       // DeviceOrientation (inclinación)
+       window.addEventListener('deviceorientation', (event) => {
+         const gamma = typeof event.gamma === 'number' ? event.gamma : 0;
+ 
+         if (Math.abs(gamma) < UMBRAL_INCLINACION) return;
+ 
+         if (gamma > UMBRAL_INCLINACION) {
+           reproducir(videoDerecha);
+         } else if (gamma < -UMBRAL_INCLINACION) {
+           reproducir(videoIzquierda);
+         }
+       }, { passive: true });
+ 
+       // DeviceMotion (sacudida)
+       window.addEventListener('devicemotion', (event) => {
+         const acc = event.accelerationIncludingGravity;
+         if (!acc) return; // algunos navegadores devuelven null
+@@ -183,26 +193,26 @@
+             console.warn("Permiso de orientación denegado (se intentará igualmente).");
+           }
+         } catch (e) {
+           console.warn("Error al solicitar permiso de orientación:", e);
+         }
+       }
+ 
+       iniciarSensores();
+       overlay.style.display = "none";
+     }
+ 
+     // --- Inicio por botón
+     startBtn.addEventListener('click', solicitarPermisosIOSyArrancar, { once: true });
+ 
+     // --- Fallback botones (pruebas en desktop)
+     document.getElementById('btnIzq').addEventListener('click', () => reproducir(videoIzquierda));
+     document.getElementById('btnDer').addEventListener('click', () => reproducir(videoDerecha));
+     document.getElementById('btnVomi').addEventListener('click', () => reproducir(videoVomita));
+ 
+     // --- Consejos extra:
+     // 1) Serví los .mp4 con un servidor local (p. ej. VS Code Live Server o python -m http.server).
+     // 2) Abrir el archivo directamente (file://) puede bloquear reproducción o acceso a sensores.
+     // 3) Mirá la consola del navegador (F12) si algo no carga.
+   </script>
+ </body>
+-</html>
+\ No newline at end of file
++</html>
