@@ -75,6 +75,7 @@
 
     let ultimaLectura = { x: 0, y: 0, z: 0 };
     let tiempoUltimaAgitacion = 0;
+    let videoActual = null;
 
     // --- Utilidades video
     function ocultarTodos() {
@@ -83,8 +84,13 @@
         v.currentTime = 0;
         v.style.display = "none";
       });
+      videoActual = null;
     }
     async function reproducir(v) {
+      if (videoActual === v && !v.paused) {
+        return; // ya se está reproduciendo ese video
+      }
+
       ocultarTodos();
       v.style.display = "block";
 
@@ -95,6 +101,7 @@
 
       try {
         await v.play();
+        videoActual = v;
       } catch (err) {
         console.warn("No se pudo reproducir el video:", err);
         // Si falla, mostramos controles para permitir play manual
@@ -103,6 +110,9 @@
     }
     [videoDerecha, videoIzquierda, videoVomita].forEach(v => {
       v.addEventListener('ended', () => {
+        if (videoActual === v) {
+          videoActual = null;
+        }
         v.style.display = "none";
       });
       v.addEventListener('error', (e) => {
